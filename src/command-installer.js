@@ -91,20 +91,46 @@ module.exports = class CommandInstaller {
     fs.readlink(destinationPath, (error, realpath) => {
       if (error && error.code !== 'ENOENT') return callback(error);
       if (realpath === commandPath) return callback(null, commandName);
-      this.createSymlink(fs, commandPath, destinationPath, error => {
-        if (error && error.code === 'EACCES' && askForPrivilege) {
-          const fsAdmin = require('fs-admin');
-          this.createSymlink(fsAdmin, commandPath, destinationPath, error => {
-            callback(error, commandName);
-          });
-        } else {
-          callback(error);
-        }
+      this.createSymlink(commandPath, destinationPath, askForPrivilege, error => {
+        callback(error, commandName);
       });
     });
   }
 
-  createSymlink(fs, sourcePath, destinationPath, callback) {
+  createSymlink(sourcePath, destinationPath, askForPrivilege, callback) {
+    this.createSymlinkWithFs(fs, sourcePath, destinationPath, error => {
+      if (error && error.code === 'EACCES' && askForPrivilege) {
+        try {
+          const fsAdmin = require('fs-admin');
+          this.createSymlinkWithFs(fsAdmin, sourcePath, destinationPath, error => {
+            if (error) {
+              this.applicationDelegate.confirm(
+                {
+                  message: 'Privileged installation unavailable',
+                  detail: 'Shell commands installed without elevated privileges. Some features may be limited.'
+                },
+                () => {}
+              );
+            }
+            callback(error);
+          });
+        } catch (requireError) {
+          this.applicationDelegate.confirm(
+            {
+              message: 'Privileged installation unavailable',
+              detail: 'Shell commands installed without elevated privileges. Some features may be limited.'
+            },
+            () => {}
+          );
+          callback(error);
+        }
+      } else {
+        callback(error);
+      }
+    });
+  }
+
+  createSymlinkWithFs(fs, sourcePath, destinationPath, callback) {
     fs.unlink(destinationPath, error => {
       if (error && error.code !== 'ENOENT') return callback(error);
       fs.makeTree(path.dirname(destinationPath), error => {
